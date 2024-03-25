@@ -4,15 +4,35 @@ import mediapipe as mp
 import numpy as np
 import pandas as pd
 
+def detect_faces(image):
+    # Initialize MediaPipe Face Detection
+    mp_face_detection = mp.solutions.face_detection
+    face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
 
-def make_histogram(image):
-    # Split the image into RGB channels
-    r, g, b = cv2.split(image)
+    # Convert the image to RGB
+    image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-    # Create histograms for each channel
-    r_hist = cv2.calcHist([r], [0], None, [256], [0, 256])
-    g_hist = cv2.calcHist([g], [0], None, [256], [0, 256])
-    b_hist = cv2.calcHist([b], [0], None, [256], [0, 256])
+    # Detect faces in the image
+    results = face_detection.process(image_rgb)
+
+    return results
+
+def crop_face(image, detection):
+    bboxC = detection.location_data.relative_bounding_box
+    ih, iw, _ = image.shape
+    x, y, w, h = int(bboxC.xmin * iw), int(bboxC.ymin * ih), \
+                 int(bboxC.width * iw), int(bboxC.height * ih)
+    
+    # Crop the image using the top-left and bottom-right corners
+    cropped_image = image[y:y+h, x:x+w]
+
+    return cropped_image
+
+def compute_histograms(image):
+    # Calculate histograms for each channel
+    r_hist = cv2.calcHist([image], [0], None, [256], [0, 256])
+    g_hist = cv2.calcHist([image], [1], None, [256], [0, 256])
+    b_hist = cv2.calcHist([image], [2], None, [256], [0, 256])
 
     # Flatten histograms
     r_hist_flat = r_hist.flatten()
@@ -21,9 +41,12 @@ def make_histogram(image):
 
     # Concatenate the histograms into a single row
     hist_row = np.concatenate([r_hist_flat, g_hist_flat, b_hist_flat])
+    hist_row = hist_row.reshape(1, -1)
 
-    return hist_row
+    # Convert to pandas DataFrame
+    hist_df = pd.DataFrame(hist_row)
 
+    return hist_df
 
 def process_dataset(dataset_path):
     data = []
@@ -40,35 +63,31 @@ def process_dataset(dataset_path):
             img_path = os.path.join(celeb_path, img_name)
             image = cv2.imread(img_path)
 
+            # Detect faces in the image
+            results = detect_faces(image)
 
-            # Crop face from the image (you may need to adjust this part)
-            # (Assuming you have a function to crop face like in the original code)
-            # cropped_image = crop_face(image)
+            if results.detections:
+                for detection in results.detections:
+                    # Crop the face from the image
+                    cropped_image = crop_face(image, detection)
 
-            # Calculate histogram for the cropped face image
-            histogram = make_histogram(image)
+                    # Compute histograms for the cropped face image
+                    histogram = compute_histograms(cropped_image)
 
-            # Append histogram to data list along with celebrity name
-            data.append([celeb_name] + histogram.tolist())
+                    # Append histogram to data list along with celebrity name
+                    data.append([celeb_name] + histogram.values.tolist())
 
     # Create DataFrame from the data
     columns = ['Celebrity'] + [f'pixel{i}' for i in range(len(data[0]) - 1)]
     df = pd.DataFrame(data, columns=columns)
-
-    csv_file_path = "/Users/muhammadhassaan/Downloads/celebrity_histograms/csv/histogram_data.csv"
-    df.to_csv(csv_file_path, index=False)  # Set index=False to exclude row numbers from the CSV
-
-    # Provide download link
-    print("CSV file saved successfully.")
-    print("Download link:", csv_file_path)
+    print(df.head(10))
     return df
 
 
-# Example usage:
-dataset_path = "/Users/muhammadhassaan/Downloads/celebrity_histograms/Celebrity Faces Dataset"
-histogram_df = process_dataset(dataset_path)
+def main():
+    dataset_path = "/Users/muhammadhassan/Downloads/Celebrity Faces Dataset"
+    histograms = process_dataset(dataset_path)
+    # print(histograms)
 
-
-
-print(histogram_df.head(15))
-
+if __name__ == "__main__":
+    main()
